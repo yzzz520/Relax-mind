@@ -1,0 +1,91 @@
+:root {
+  /* 背景 */
+  --bg-base: #0b0a14;
+  --bg-aurora-1: #7c5cff;
+  --bg-aurora-2: #ff8fb1;
+
+  /* 玻璃拟态 */
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-blur: 16px;
+
+  /* 文字 */
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.55);
+
+  /* 动效时长 */
+  --dur-fast: 200ms;
+  --dur-base: 320ms;
+  --dur-slow: 800ms;
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --radius-card: 20px;
+  --maxw-input: 720px;
+  --panel-padding: 24px;
+  --radar-height: 320px;
+  --result-maxw: 1120px;
+
+  color-scheme: dark;
+  font-family:
+    system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--bg-base);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+button,
+input,
+textarea,
+select {
+  color: inherit;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#app {
+  min-height: 100dvh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
