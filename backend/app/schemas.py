@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class HealthResponse(BaseModel):
     status: str
     version: str
+    analyzer: Literal["llm", "mock-fallback"]
 
 
 class LoginRequest(BaseModel):

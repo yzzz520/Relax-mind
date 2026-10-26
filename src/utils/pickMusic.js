@@ -16,9 +16,14 @@ function hashString(s) {
   return h
 }
 
-export function pickMusic(valence, arousal, seed = '') {
+export function pickMusicFromLibrary(
+  library,
+  valence,
+  arousal,
+  seed = '',
+) {
   const quadrant = quadrantOf(valence, arousal)
-  const list = MUSIC_LIBRARY[quadrant]
+  const list = library[quadrant]
 
   if (!list || list.length === 0) {
     return null
@@ -26,4 +31,16 @@ export function pickMusic(valence, arousal, seed = '') {
 
   const index = hashString(String(seed)) % list.length
   return { ...list[index], quadrant }
+}
+
+export function pickTrackFromList(list, seed, quadrant) {
+  if (!list || list.length === 0) {
+    return null
+  }
+  const index = hashString(String(seed)) % list.length
+  return { ...list[index], quadrant }
+}
+
+export function pickMusic(valence, arousal, seed = '') {
+  return pickMusicFromLibrary(MUSIC_LIBRARY, valence, arousal, seed)
 }

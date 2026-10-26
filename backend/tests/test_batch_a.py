@@ -1,20 +1,29 @@
+import asyncio
+import json
 import os
 import unittest
 from pathlib import Path
-import asyncio
+from unittest.mock import patch
+
+import httpx
 
 
 TEST_DB = Path(__file__).resolve().parents[1] / "batch-a-test.db"
 TEST_DB.unlink(missing_ok=True)
 os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{TEST_DB.as_posix()}"
 os.environ["JWT_SECRET"] = "batch-a-test-secret"
+os.environ["MOOD_ANALYZER"] = "mock"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
+from app.config import settings  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Admin, Track  # noqa: E402
+from app.services.analyzer import runtime as analyzer_runtime  # noqa: E402
+from app.services.analyzer.base import AnalysisResult  # noqa: E402
+from app.services.analyzer.llm import AnalyzerFailure, LLMAnalyzer  # noqa: E402
 from app.services.music.local import LocalProvider  # noqa: E402
 
 
@@ -42,6 +51,7 @@ class BatchATest(unittest.TestCase):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "UP")
+        self.assertEqual(response.json()["analyzer"], "mock-fallback")
 
     def test_login_history_and_admin_error_message(self):
         token = self.user_token()
@@ -151,6 +161,206 @@ class BatchATest(unittest.TestCase):
             for _ in range(3)
         ]
         self.assertEqual(repeated, ["melancholic-1"] * 3)
+
+    @staticmethod
+    def llm_payload():
+        return {
+            "emotions": {
+                "喜悦": 20,
+                "期待": 30,
+                "平静": 70,
+                "温暖": 60,
+                "悲伤": 10,
+                "焦虑": 5,
+                "疲惫": 15,
+                "孤独": 5,
+            },
+            "keywords": ["阳光", "安静", "松弛"],
+            "fineLabels": ["松弛", "满足", "安心", "慢下来", "踏实"],
+            "comment": "今天的光很柔和。让这一刻慢一点。",
+        }
+
+    def test_llm_analyzer_success_and_http_400_logging(self):
+        async def success_handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    self.llm_payload(),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+
+        analyzer = LLMAnalyzer(
+            base_url="https://llm.test/v1",
+            api_key="test-key",
+            model="deepseek-flash",
+            transport=httpx.MockTransport(success_handler),
+        )
+        result = asyncio.run(analyzer.analyze("今天晒了被子，很舒服"))
+        self.assertEqual(result.fine_labels[0], "松弛")
+
+        async def bad_model_handler(request):
+            return httpx.Response(400, text="invalid model")
+
+        failing = LLMAnalyzer(
+            base_url="https://llm.test/v1",
+            api_key="test-key",
+            model="missing-model",
+            transport=httpx.MockTransport(bad_model_handler),
+        )
+        with self.assertLogs(
+            "app.services.analyzer.llm",
+            level="WARNING",
+        ) as captured:
+            with self.assertRaises(AnalyzerFailure) as raised:
+                asyncio.run(failing.analyze("测试"))
+        self.assertEqual(raised.exception.reason, "http_400")
+        self.assertIn("reason=http_400", "\n".join(captured.output))
+        self.assertIn("duration_ms=", "\n".join(captured.output))
+
+        async def bad_key_handler(request):
+            return httpx.Response(401, text="invalid api key")
+
+        unauthorized = LLMAnalyzer(
+            base_url="https://llm.test/v1",
+            api_key="bad-key",
+            model="deepseek-flash",
+            transport=httpx.MockTransport(bad_key_handler),
+        )
+        with self.assertRaises(AnalyzerFailure) as unauthorized_error:
+            asyncio.run(unauthorized.analyze("测试"))
+        self.assertEqual(unauthorized_error.exception.reason, "http_401")
+
+    def test_llm_timeout_json_and_validation_reasons(self):
+        async def timeout_handler(request):
+            raise httpx.ReadTimeout("timeout", request=request)
+
+        timeout_analyzer = LLMAnalyzer(
+            base_url="https://llm.test/v1",
+            api_key="test-key",
+            model="deepseek-flash",
+            transport=httpx.MockTransport(timeout_handler),
+        )
+        with self.assertRaises(AnalyzerFailure) as timeout_error:
+            asyncio.run(timeout_analyzer.analyze("测试"))
+        self.assertEqual(timeout_error.exception.reason, "timeout")
+
+        async def json_handler(request):
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "not-json"}}]},
+            )
+
+        json_analyzer = LLMAnalyzer(
+            base_url="https://llm.test/v1",
+            api_key="test-key",
+            model="deepseek-flash",
+            transport=httpx.MockTransport(json_handler),
+        )
+        with self.assertRaises(AnalyzerFailure) as json_error:
+            asyncio.run(json_analyzer.analyze("测试"))
+        self.assertEqual(json_error.exception.reason, "json_parse")
+
+        async def validation_handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": '{"emotions": {}}'}}
+                    ]
+                },
+            )
+
+        validation_analyzer = LLMAnalyzer(
+            base_url="https://llm.test/v1",
+            api_key="test-key",
+            model="deepseek-flash",
+            transport=httpx.MockTransport(validation_handler),
+        )
+        with self.assertRaises(AnalyzerFailure) as validation_error:
+            asyncio.run(validation_analyzer.analyze("测试"))
+        self.assertEqual(validation_error.exception.reason, "validation")
+
+    def test_health_tracks_fallback_and_llm_recovery(self):
+        original = (
+            settings.mood_analyzer,
+            settings.llm_api_key,
+            settings.llm_base_url,
+            settings.llm_model,
+        )
+
+        class FailingAnalyzer:
+            async def analyze(_analyzer, _text):
+                raise AnalyzerFailure("http_400", "invalid model")
+
+        class WorkingAnalyzer:
+            async def analyze(_analyzer, _text):
+                return AnalysisResult(
+                    emotions=self.llm_payload()["emotions"],
+                    valence=0.5,
+                    arousal=0.4,
+                    keywords=["阳光", "安静", "松弛"],
+                    fine_labels=["松弛", "满足", "安心", "慢下来", "踏实"],
+                    comment="今天的光很柔和。让这一刻慢一点。",
+                )
+
+        try:
+            settings.mood_analyzer = "llm"
+            settings.llm_api_key = "test-key"
+            settings.llm_base_url = "https://llm.test/v1"
+            settings.llm_model = "missing-model"
+            headers = {"Authorization": f"Bearer {self.user_token()}"}
+            with patch(
+                "app.services.analyzer.runtime.LLMAnalyzer",
+                return_value=FailingAnalyzer(),
+            ):
+                with self.assertLogs(
+                    "app.services.analyzer.runtime",
+                    level="WARNING",
+                ) as captured:
+                    response = self.client.post(
+                        "/api/capsules/analyze",
+                        json={"text": "今天有点安静"},
+                        headers=headers,
+                    )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("reason=http_400", "\n".join(captured.output))
+            self.assertEqual(
+                self.client.get("/api/health").json()["analyzer"],
+                "mock-fallback",
+            )
+
+            settings.llm_model = "deepseek-flash"
+            with patch(
+                "app.services.analyzer.runtime.LLMAnalyzer",
+                return_value=WorkingAnalyzer(),
+            ):
+                response = self.client.post(
+                    "/api/capsules/analyze",
+                    json={"text": "今天有点安静"},
+                    headers=headers,
+                )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                self.client.get("/api/health").json()["analyzer"],
+                "llm",
+            )
+        finally:
+            (
+                settings.mood_analyzer,
+                settings.llm_api_key,
+                settings.llm_base_url,
+                settings.llm_model,
+            ) = original
+            analyzer_runtime.set_effective_analyzer("mock-fallback")
 
 
 if __name__ == "__main__":

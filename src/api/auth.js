@@ -1,42 +1,163 @@
-// 登录 API：提供用户昵称登录与管理员账号登录的 mock 实现。
-const ADMIN_USERNAME = 'admin'
-// TODO: 接入后端后删除写死的管理员凭据。
-const ADMIN_PASSWORD = 'admin123'
+// 认证 API：Supabase 手机号合成邮箱登录，mock 模式使用本地会话。
+import { isMockMode, supabase } from '../lib/supabase'
+import { mapSupabaseError, throwIfSupabaseError } from '../lib/errors'
 
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
+const MOCK_PROFILE_PREFIX = 'capsule_mock_profile_'
+export const MOCK_SESSION_KEY = 'capsule_mock_session'
+
+export function normalizePhone(value) {
+  let phone = String(value ?? '').replace(/[\s-]/g, '')
+  phone = phone.replace(/^\+86/, '')
+  phone = phone.replace(/^86(?=1[3-9]\d{9}$)/, '')
+
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    throw new Error('请输入正确的 11 位手机号')
+  }
+  return phone
 }
 
-function random(min, max) {
-  return Math.round(Math.random() * (max - min) + min)
+function syntheticEmail(phone) {
+  return `${phone}@phone.local`
 }
 
-export async function login(nickname) {
-  await sleep(random(400, 800))
+function validatePassword(password) {
+  if (String(password ?? '').length < 6) {
+    throw new Error('密码至少 6 位')
+  }
+}
 
-  const normalizedNickname = nickname.trim()
+function validateLoginPassword(password) {
+  if (!String(password ?? '')) {
+    throw new Error('请输入密码')
+  }
+}
 
+function mockSession(phone, nickname, role = 'user') {
+  return {
+    access_token: `mock-token-${phone}`,
+    token_type: 'bearer',
+    user: {
+      id: `mock-${phone}`,
+      email: syntheticEmail(phone),
+      user_metadata: { nickname, phone },
+      app_metadata: { role },
+    },
+  }
+}
+
+export function readMockSession() {
+  try {
+    const value = window.localStorage.getItem(MOCK_SESSION_KEY)
+    return value ? JSON.parse(value) : null
+  } catch {
+    window.localStorage.removeItem(MOCK_SESSION_KEY)
+    return null
+  }
+}
+
+export async function register(phone, nickname, password) {
+  const normalizedPhone = normalizePhone(phone)
+  const normalizedNickname = String(nickname ?? '').trim()
+  validatePassword(password)
   if (normalizedNickname.length < 2) {
     throw new Error('昵称至少需要 2 个字')
   }
 
-  return {
-    role: 'user',
-    nickname: normalizedNickname,
+  if (isMockMode) {
+    const key = `${MOCK_PROFILE_PREFIX}${normalizedPhone}`
+    if (window.localStorage.getItem(key)) {
+      throw new Error('这个手机号已经注册过了')
+    }
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ nickname: normalizedNickname }),
+    )
+    return mockSession(normalizedPhone, normalizedNickname)
   }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: syntheticEmail(normalizedPhone),
+    password,
+    options: {
+      data: {
+        nickname: normalizedNickname,
+        phone: normalizedPhone,
+      },
+    },
+  })
+  throwIfSupabaseError(error, '注册失败，请稍后重试')
+
+  if (data.user?.identities?.length === 0) {
+    throw new Error('这个手机号已经注册过了')
+  }
+
+  if (data.session) {
+    return data.session
+  }
+
+  const loginResult = await supabase.auth.signInWithPassword({
+    email: syntheticEmail(normalizedPhone),
+    password,
+  })
+  throwIfSupabaseError(loginResult.error, '注册成功，但自动登录失败')
+  return loginResult.data.session
 }
 
-export async function adminLogin(username, password) {
-  await sleep(random(400, 800))
+export async function login(phone, password) {
+  const normalizedPhone = normalizePhone(phone)
+  validateLoginPassword(password)
 
-  if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-    throw new Error('账号或密码错误')
+  if (isMockMode) {
+    const profile = window.localStorage.getItem(
+      `${MOCK_PROFILE_PREFIX}${normalizedPhone}`,
+    )
+    let nickname = `用户${normalizedPhone.slice(-4)}`
+    try {
+      nickname = profile ? JSON.parse(profile).nickname : nickname
+    } catch {
+      window.localStorage.removeItem(
+        `${MOCK_PROFILE_PREFIX}${normalizedPhone}`,
+      )
+    }
+    return mockSession(normalizedPhone, nickname)
   }
 
-  return {
-    role: 'admin',
-    nickname: username,
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: syntheticEmail(normalizedPhone),
+    password,
+  })
+  if (error) {
+    throw mapSupabaseError(error, '登录失败，请稍后重试')
+  }
+  return data.session
+}
+
+export async function adminLogin(phone, password) {
+  if (isMockMode) {
+    const normalizedPhone = normalizePhone(phone)
+    validateLoginPassword(password)
+    return mockSession(normalizedPhone, '管理员', 'admin')
+  }
+
+  const session = await login(phone, password)
+  const role = session?.user?.app_metadata?.role
+  if (role !== 'admin') {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      throw mapSupabaseError(error, '退出非管理员账号失败')
+    }
+    throw new Error('该账号没有管理员权限')
+  }
+  return session
+}
+
+export async function logout() {
+  if (isMockMode) {
+    window.localStorage.removeItem(MOCK_SESSION_KEY)
+    return
+  }
+  const { error } = await supabase.auth.signOut()
+  if (error) {
+    throw mapSupabaseError(error, '退出登录失败')
   }
 }

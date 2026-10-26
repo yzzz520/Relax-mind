@@ -11,7 +11,15 @@ import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
-const { stage, inputText, capsule, keywords, submit, reset } = useEmotionFlow()
+const {
+  stage,
+  inputText,
+  capsule,
+  keywords,
+  errorMessage,
+  submit,
+  reset,
+} = useEmotionFlow()
 
 const bgIntensity = computed(() => {
   if (stage.value === 'analyzing') return 1
@@ -19,8 +27,8 @@ const bgIntensity = computed(() => {
   return 0.3
 })
 
-function handleLogout() {
-  auth.logout()
+async function handleLogout() {
+  await auth.logout()
   router.replace('/login')
 }
 
@@ -53,6 +61,7 @@ function handleRestart() {
         key="input"
         v-model="inputText"
         :is-error="stage === 'error'"
+        :submit-error="errorMessage"
         @submit="submit"
         @retry="reset"
       />

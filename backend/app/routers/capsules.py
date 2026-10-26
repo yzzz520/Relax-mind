@@ -16,7 +16,7 @@ from ..schemas import (
     CapsuleOut,
     MusicOut,
 )
-from ..services.analyzer import get_analyzer
+from ..services.analyzer.runtime import analyze_with_fallback
 from ..services.music import get_music_provider
 from ..services.vad import quadrant_of
 
@@ -72,8 +72,7 @@ async def analyze_capsule(
     user: User = Depends(get_current_user),
 ):
     """Analyze input text, pick a stable track, and persist the capsule."""
-    analyzer = get_analyzer(settings.mood_analyzer)
-    analysis = await analyzer.analyze(payload.text)
+    analysis, _ = await analyze_with_fallback(payload.text)
     quadrant = quadrant_of(analysis.valence, analysis.arousal)
     provider = get_music_provider(settings.music_provider, db)
     track = await provider.pick(quadrant, payload.text)

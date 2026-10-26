@@ -1,4 +1,4 @@
-node_modules
+﻿node_modules
 dist
 .DS_Store
 *.local
@@ -10,5 +10,12 @@ backend/.env
 backend/.venv
 backend/*.db
 backend/*.sqlite3
+backend/*.log
 **/__pycache__/
 **/.pytest_cache/
+
+# 前端环境变量（Vite）
+/.env
+/.env.*
+!/.env.example
+/.vercel

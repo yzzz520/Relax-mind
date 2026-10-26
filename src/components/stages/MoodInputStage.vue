@@ -15,6 +15,10 @@ const props = defineProps({
     default: '',
   },
   isError: Boolean,
+  submitError: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['update:modelValue', 'submit', 'retry'])
@@ -127,6 +131,9 @@ onBeforeUnmount(() => {
 
       <p v-if="validationMessage" class="validation-message" role="alert">
         {{ validationMessage }}
+      </p>
+      <p v-if="submitError" class="validation-message" role="alert">
+        {{ submitError }}
       </p>
 
       <button v-if="isError" class="retry-button" type="button" @click="handleRetry">

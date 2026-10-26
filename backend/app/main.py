@@ -11,6 +11,10 @@ from .db import init_db
 from .routers import admin, auth, capsules, music
 from .schemas import HealthResponse
 from .seed import seed_database
+from .services.analyzer.runtime import (
+    get_effective_analyzer,
+    initialize_analyzer_state,
+)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +26,7 @@ APP_VERSION = "0.1.0"
 async def lifespan(_: FastAPI):
     init_db()
     seed_database()
+    initialize_analyzer_state()
     logger.info("Backend startup completed")
     yield
 
@@ -58,4 +63,8 @@ async def validation_error_handler(_: Request, exc: RequestValidationError):
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
 def health():
     """Return backend liveness and version."""
-    return HealthResponse(status="UP", version=APP_VERSION)
+    return HealthResponse(
+        status="UP",
+        version=APP_VERSION,
+        analyzer=get_effective_analyzer(),
+    )

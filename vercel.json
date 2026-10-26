@@ -1,0 +1,33 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/analyze.py": {
+      "maxDuration": 60,
+      "includeFiles": [
+        "backend/app/config.py",
+        "backend/app/services/analyzer/**",
+        "backend/app/services/vad.py"
+      ]
+    },
+    "api/health.py": {
+      "maxDuration": 10,
+      "includeFiles": [
+        "backend/app/config.py",
+        "backend/app/services/analyzer/**",
+        "backend/app/services/vad.py"
+      ]
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/sb/:path*",
+      "destination": "https://tlsaccyapnfnxxritbbl.supabase.co/:path*"
+    },
+    {
+      "source": "/((?!api/|sb/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
