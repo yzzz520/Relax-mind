@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
       </p>
 
       <button v-if="isError" class="retry-button" type="button" @click="handleRetry">
-        解析失败，点击重试
+        生成失败，点击重试
       </button>
     </div>
   </section>

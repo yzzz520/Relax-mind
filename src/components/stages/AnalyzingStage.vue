@@ -1,4 +1,4 @@
-<!-- 解析态组件：按 0-600、600-1200、1200-1800ms 依次展示三条文案。 -->
+<!-- 解析态组件：按 0-600、600-1200、1200-1800ms 依次展示三条情绪分析文案。 -->
 <!-- 输入实时关键词，输出全屏解析遮罩与第三条呼吸态。 -->
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -19,7 +19,7 @@ let frameId
 const messages = computed(() => [
   `正在提取关键词：[${props.keywords.join(', ')}]...`,
   '情感向量计算中...',
-  '正在为你寻找专属旋律...',
+  '正在整理你的情绪，请稍候...',
 ])
 
 function schedule(callback, delay) {

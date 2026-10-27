@@ -43,6 +43,7 @@ export function useEmotionFlow() {
       const saved = await saveCapsule(
         {
           ...data,
+          input: text,
           quadrant: music.quadrant,
           music,
           palette:
