@@ -17,6 +17,7 @@ const {
   capsule,
   keywords,
   errorMessage,
+  saveState,
   submit,
   reset,
 } = useEmotionFlow()
@@ -74,6 +75,7 @@ function handleRestart() {
         v-else-if="capsule"
         key="result"
         :capsule="capsule"
+        :save-state="saveState"
         @restart="handleRestart"
       />
       <div v-else key="result-fallback" class="result-placeholder">

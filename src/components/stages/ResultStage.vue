@@ -12,6 +12,10 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  saveState: {
+    type: String,
+    default: 'idle',
+  },
 })
 
 const emit = defineEmits(['restart'])
@@ -65,6 +69,21 @@ const emit = defineEmits(['restart'])
         </section>
       </div>
     </div>
+
+    <p
+      v-if="saveState !== 'idle'"
+      class="save-state"
+      :class="`is-${saveState}`"
+      role="status"
+    >
+      {{
+        saveState === 'saving'
+          ? '正在保存记录'
+          : saveState === 'saved'
+            ? '已保存'
+            : '已生成，但记录未保存'
+      }}
+    </p>
 
     <div class="result-actions">
       <button class="secondary-button" type="button" @click="emit('restart')">
@@ -153,6 +172,18 @@ const emit = defineEmits(['restart'])
   width: min(100%, var(--result-maxw));
   margin: 28px auto 0;
 }
+
+.save-state {
+  width: min(100%, var(--result-maxw));
+  margin: 18px auto -14px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.save-state.is-saved { color: rgba(143, 227, 207, 0.66); }
+.save-state.is-failed { color: rgba(255, 190, 150, 0.62); }
 
 .secondary-button,
 .primary-button {

@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { analyzeMood, extractKeywords } from '../api/emotion'
 import { paletteForQuadrant, saveCapsule } from '../api/capsules'
+import { enqueueCapsule } from '../api/capsuleQueue'
 import { useAuthStore } from '../stores/auth'
 import { pickMusic } from '../utils/pickMusic'
 
@@ -12,13 +13,21 @@ export function useEmotionFlow() {
   const capsule = ref(null)
   const keywords = ref([])
   const errorMessage = ref('')
+  const saveState = ref('idle')
   let requestId = 0
+  let saveStateTimer
+
+  function clearSaveStateTimer() {
+    window.clearTimeout(saveStateTimer)
+  }
 
   async function submit(text) {
     const myId = ++requestId
     inputText.value = text
     keywords.value = extractKeywords(text)
     errorMessage.value = ''
+    saveState.value = 'idle'
+    clearSaveStateTimer()
     stage.value = 'analyzing'
 
     try {
@@ -40,23 +49,49 @@ export function useEmotionFlow() {
         return
       }
 
-      const saved = await saveCapsule(
-        {
-          ...data,
-          input: text,
-          quadrant: music.quadrant,
-          music,
-          palette:
-            data.palette || paletteForQuadrant(music.quadrant),
-        },
-        auth.user?.id,
-      )
-      if (myId !== requestId) {
-        return
+      const draft = {
+        ...data,
+        capsuleId: crypto.randomUUID(),
+        createdAt: data.createdAt || new Date().toISOString(),
+        input: text,
+        quadrant: music.quadrant,
+        music,
+        palette: data.palette || paletteForQuadrant(music.quadrant),
       }
-
-      capsule.value = saved
+      capsule.value = draft
       stage.value = 'result'
+      saveState.value = 'saving'
+
+      const userId = auth.user?.id
+      saveCapsule(draft, userId)
+        .then((saved) => {
+          if (
+            myId !== requestId ||
+            capsule.value?.capsuleId !== draft.capsuleId
+          ) {
+            return
+          }
+          capsule.value = saved
+          saveState.value = 'saved'
+          clearSaveStateTimer()
+          saveStateTimer = window.setTimeout(() => {
+            if (
+              myId === requestId &&
+              saveState.value === 'saved'
+            ) {
+              saveState.value = 'idle'
+            }
+          }, 2000)
+        })
+        .catch(() => {
+          enqueueCapsule(draft, userId)
+          if (
+            myId === requestId &&
+            capsule.value?.capsuleId === draft.capsuleId
+          ) {
+            saveState.value = 'failed'
+          }
+        })
     } catch (error) {
       if (myId !== requestId) {
         return
@@ -70,10 +105,12 @@ export function useEmotionFlow() {
 
   function reset() {
     requestId += 1
+    clearSaveStateTimer()
     stage.value = 'input'
     keywords.value = []
     capsule.value = null
     errorMessage.value = ''
+    saveState.value = 'idle'
   }
 
   return {
@@ -82,6 +119,7 @@ export function useEmotionFlow() {
     capsule,
     keywords,
     errorMessage,
+    saveState,
     submit,
     reset,
   }

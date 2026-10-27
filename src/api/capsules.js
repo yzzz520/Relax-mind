@@ -65,7 +65,10 @@ function normalizeRow(row) {
 
 export async function saveCapsule(capsule, userId) {
   if (!userId) {
-    throw new Error('登录状态已失效，请重新登录')
+    throw new Error('保存记录需要登录状态')
+  }
+  if (!capsule.capsuleId) {
+    throw new Error('胶囊编号缺失')
   }
 
   if (isMockMode) {
@@ -76,15 +79,18 @@ export async function saveCapsule(capsule, userId) {
         `mock_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
       createdAt: capsule.createdAt || new Date().toISOString(),
     }
-    const history = readMockHistory(userId)
+    const history = readMockHistory(userId).filter(
+      (entry) => entry.capsuleId !== item.capsuleId,
+    )
     history.unshift(item)
     writeMockHistory(userId, history)
     return item
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('capsules')
-    .insert({
+    .upsert({
+      id: capsule.capsuleId,
       user_id: userId,
       input_text: capsule.input,
       emotions: capsule.emotions,
@@ -94,24 +100,18 @@ export async function saveCapsule(capsule, userId) {
       fine_labels: capsule.fineLabels,
       track_id: capsule.music?.id || null,
       comment: capsule.comment,
+    }, {
+      onConflict: 'id',
+      ignoreDuplicates: true,
     })
-    .select('id,created_at')
-    .single()
   if (error) {
-    const handled = await handleSupabaseUnauthorized(
-      error,
-      supabaseRequestUrl('/sb/rest/v1/capsules'),
-    )
-    if (handled) {
-      throw new Error('登录已失效，请重新登录')
-    }
+    throw mapSupabaseError(error, '保存情绪胶囊失败')
   }
-  throwIfSupabaseError(error, '保存情绪胶囊失败')
 
   return {
     ...capsule,
-    capsuleId: data.id,
-    createdAt: data.created_at,
+    capsuleId: capsule.capsuleId,
+    createdAt: capsule.createdAt,
   }
 }
 
