@@ -5,19 +5,11 @@
   "functions": {
     "api/analyze.py": {
       "maxDuration": 60,
-      "includeFiles": [
-        "backend/app/config.py",
-        "backend/app/services/analyzer/**",
-        "backend/app/services/vad.py"
-      ]
+      "includeFiles": "backend/app/**"
     },
     "api/health.py": {
       "maxDuration": 10,
-      "includeFiles": [
-        "backend/app/config.py",
-        "backend/app/services/analyzer/**",
-        "backend/app/services/vad.py"
-      ]
+      "includeFiles": "backend/app/**"
     }
   },
   "rewrites": [
