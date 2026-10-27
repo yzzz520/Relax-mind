@@ -1,6 +1,10 @@
 // 胶囊数据 API：Supabase 持久化与 mock 本地历史，统一输出前端 Capsule。
 import { throwIfSupabaseError } from '../lib/errors'
 import { isMockMode, supabase } from '../lib/supabase'
+import {
+  handleSupabaseUnauthorized,
+  supabaseRequestUrl,
+} from '../lib/unauthorized'
 
 const HISTORY_PREFIX = 'capsule_mock_history_'
 const PALETTES = {
@@ -93,6 +97,15 @@ export async function saveCapsule(capsule, userId) {
     })
     .select('id,created_at')
     .single()
+  if (error) {
+    const handled = await handleSupabaseUnauthorized(
+      error,
+      supabaseRequestUrl('/sb/rest/v1/capsules'),
+    )
+    if (handled) {
+      throw new Error('登录已失效，请重新登录')
+    }
+  }
   throwIfSupabaseError(error, '保存情绪胶囊失败')
 
   return {
@@ -120,6 +133,15 @@ export async function fetchHistory(limit = 50, userId) {
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(safeLimit)
+  if (error) {
+    const handled = await handleSupabaseUnauthorized(
+      error,
+      supabaseRequestUrl('/sb/rest/v1/capsules'),
+    )
+    if (handled) {
+      throw new Error('登录已失效，请重新登录')
+    }
+  }
   throwIfSupabaseError(error, '读取历史记录失败')
   return (data || []).map(normalizeRow)
 }

@@ -1,6 +1,10 @@
 // 认证 API：Supabase 手机号合成邮箱登录，mock 模式使用本地会话。
 import { isMockMode, supabase } from '../lib/supabase'
 import { mapSupabaseError, throwIfSupabaseError } from '../lib/errors'
+import {
+  handleSupabaseUnauthorized,
+  supabaseRequestUrl,
+} from '../lib/unauthorized'
 
 const MOCK_PROFILE_PREFIX = 'capsule_mock_profile_'
 export const MOCK_SESSION_KEY = 'capsule_mock_session'
@@ -30,6 +34,17 @@ function validateLoginPassword(password) {
   if (!String(password ?? '')) {
     throw new Error('请输入密码')
   }
+}
+
+async function raiseSupabaseAuthError(error, path, fallback) {
+  const handled = await handleSupabaseUnauthorized(
+    error,
+    supabaseRequestUrl(path),
+  )
+  if (handled) {
+    throw new Error('登录已失效，请重新登录')
+  }
+  throw mapSupabaseError(error, fallback)
 }
 
 function mockSession(phone, nickname, role = 'user') {
@@ -85,6 +100,13 @@ export async function register(phone, nickname, password) {
       },
     },
   })
+  if (error) {
+    await raiseSupabaseAuthError(
+      error,
+      '/sb/auth/v1/signup',
+      '注册失败，请稍后重试',
+    )
+  }
   throwIfSupabaseError(error, '注册失败，请稍后重试')
 
   if (data.user?.identities?.length === 0) {
@@ -99,6 +121,13 @@ export async function register(phone, nickname, password) {
     email: syntheticEmail(normalizedPhone),
     password,
   })
+  if (loginResult.error) {
+    await raiseSupabaseAuthError(
+      loginResult.error,
+      '/sb/auth/v1/token',
+      '注册成功，但自动登录失败',
+    )
+  }
   throwIfSupabaseError(loginResult.error, '注册成功，但自动登录失败')
   return loginResult.data.session
 }
@@ -127,7 +156,11 @@ export async function login(phone, password) {
     password,
   })
   if (error) {
-    throw mapSupabaseError(error, '登录失败，请稍后重试')
+    await raiseSupabaseAuthError(
+      error,
+      '/sb/auth/v1/token',
+      '登录失败，请稍后重试',
+    )
   }
   return data.session
 }
@@ -144,7 +177,11 @@ export async function adminLogin(phone, password) {
   if (role !== 'admin') {
     const { error } = await supabase.auth.signOut()
     if (error) {
-      throw mapSupabaseError(error, '退出非管理员账号失败')
+      await raiseSupabaseAuthError(
+        error,
+        '/sb/auth/v1/logout',
+        '退出非管理员账号失败',
+      )
     }
     throw new Error('该账号没有管理员权限')
   }
@@ -158,6 +195,12 @@ export async function logout() {
   }
   const { error } = await supabase.auth.signOut()
   if (error) {
-    throw mapSupabaseError(error, '退出登录失败')
+    const handled = await handleSupabaseUnauthorized(
+      error,
+      supabaseRequestUrl('/sb/auth/v1/logout'),
+    )
+    if (!handled) {
+      throw mapSupabaseError(error, '退出登录失败')
+    }
   }
 }

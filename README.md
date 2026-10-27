@@ -78,3 +78,5 @@ LLM_MODEL
 ```
 
 不要把服务端变量加 `VITE_` 前缀。`POST /api/analyze` 必须携带 Supabase 用户 JWT；`GET /api/health` 返回当前配置下生效的 analyzer 状态。
+
+`/api/analyze` 按 JWT header 的 `alg` 验证：`ES256` 使用 Supabase JWKS（缓存 1 小时，kid 缺失时强制刷新一次），`HS256` 使用 `SUPABASE_JWT_SECRET` 兼容旧项目。JWKS 地址优先使用 `SUPABASE_URL`，未配置时回退到 `VITE_SUPABASE_TARGET_URL`。

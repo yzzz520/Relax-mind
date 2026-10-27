@@ -14,7 +14,7 @@ export async function analyzeMood(text, accessToken) {
     return analyzeMockMood(text)
   }
   if (!accessToken) {
-    throw new Error('登录状态已失效，请重新登录')
+    throw new Error('分析失败，请重试')
   }
 
   let response
@@ -40,7 +40,7 @@ export async function analyzeMood(text, accessToken) {
 
   if (!response.ok) {
     if (response.status === 401) {
-      throw new Error('登录已失效，请重新登录')
+      throw new Error('分析失败，请重试')
     }
     throw new Error(
       typeof payload?.detail === 'string'

@@ -8,6 +8,10 @@ import {
 } from '../api/auth'
 import { mapSupabaseError } from '../lib/errors'
 import { isMockMode, supabase } from '../lib/supabase'
+import {
+  handleSupabaseUnauthorized,
+  supabaseRequestUrl,
+} from '../lib/unauthorized'
 
 export const useAuthStore = defineStore('auth', () => {
   const session = ref(null)
@@ -61,10 +65,16 @@ export const useAuthStore = defineStore('auth', () => {
 
       const { data, error } = await supabase.auth.getSession()
       if (error) {
-        authError.value = mapSupabaseError(
+        const handled = await handleSupabaseUnauthorized(
           error,
-          '读取登录状态失败',
-        ).message
+          supabaseRequestUrl('/sb/auth/v1/token'),
+        )
+        if (!handled) {
+          authError.value = mapSupabaseError(
+            error,
+            '读取登录状态失败',
+          ).message
+        }
       } else {
         applySession(data.session)
       }
