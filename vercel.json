@@ -19,7 +19,7 @@
       "destination": "https://tlsaccyapnfnxxritbbl.supabase.co/:path*"
     },
     {
-      "source": "/((?!api/|sb/).*)",
+      "source": "/((?!api/|sb/|audio/|assets/).*)",
       "destination": "/index.html"
     }
   ]
