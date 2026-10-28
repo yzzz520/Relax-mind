@@ -1,140 +1,196 @@
-<!-- 管理后台页：S1 阶段仅作为管理员登录后的路由占位容器。 -->
+<!-- 管理后台：拉取记录、筛选数据并组合统计卡、图表和表格。 -->
+<!-- 输入管理员会话，输出只读的全站情绪概览。 -->
 <script setup>
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { fetchRecords } from '../api/admin'
+import DailyLine from '../components/admin/DailyLine.vue'
+import EmotionBar from '../components/admin/EmotionBar.vue'
+import RecordsTable from '../components/admin/RecordsTable.vue'
+import StatCards from '../components/admin/StatCards.vue'
 import { useAuthStore } from '../stores/auth'
+import { computeStats } from '../utils/stats'
 
 const router = useRouter()
 const auth = useAuthStore()
+const records = ref([])
+const loading = ref(true)
+const errorMessage = ref('')
+const quadrantFilter = ref('')
+const rangeFilter = ref('')
+let requestId = 0
+
+const quadrantOptions = [
+  { value: '', label: '全部' },
+  { value: 'melancholic', label: '低落' },
+  { value: 'anxious', label: '紧绷' },
+  { value: 'joyful', label: '明亮' },
+  { value: 'calm', label: '平静' },
+]
+
+const rangeOptions = [
+  { value: '', label: '全部时间' },
+  { value: '7', label: '近 7 天' },
+  { value: '30', label: '近 30 天' },
+]
+
+const hasFilters = computed(
+  () => Boolean(quadrantFilter.value || rangeFilter.value),
+)
+const stats = computed(() => computeStats(records.value))
+
+async function loadRecords() {
+  const currentRequest = ++requestId
+  loading.value = true
+  errorMessage.value = ''
+
+  try {
+    const data = await fetchRecords({
+      quadrant: quadrantFilter.value || null,
+      days: rangeFilter.value ? Number(rangeFilter.value) : null,
+    })
+    if (currentRequest === requestId) {
+      records.value = data
+    }
+  } catch (error) {
+    if (currentRequest === requestId) {
+      records.value = []
+      errorMessage.value =
+        error instanceof Error ? error.message : '读取管理数据失败'
+    }
+  } finally {
+    if (currentRequest === requestId) {
+      loading.value = false
+    }
+  }
+}
+
+function clearFilters() {
+  quadrantFilter.value = ''
+  rangeFilter.value = ''
+}
 
 async function handleLogout() {
   await auth.logout()
   router.replace('/login')
 }
+
+watch([quadrantFilter, rangeFilter], loadRecords)
+onMounted(loadRecords)
 </script>
 
 <template>
-  <main class="shell">
-    <header class="shell-header">
-      <span class="shell-brand">AI 情绪胶囊</span>
-      <div class="shell-actions">
-        <span class="shell-role">管理员 · {{ auth.nickname }}</span>
-        <button class="logout-button" type="button" @click="handleLogout">
-          退出
-        </button>
-      </div>
-    </header>
+  <main class="admin-page">
+    <div class="admin-shell">
+      <header class="admin-header">
+        <span class="brand">AI 情绪胶囊</span>
+        <div class="header-actions">
+          <span class="role">管理员 · {{ auth.nickname }}</span>
+          <button class="logout-button" type="button" @click="handleLogout">
+            退出
+          </button>
+        </div>
+      </header>
 
-    <section class="placeholder">
-      <span class="placeholder-mark" aria-hidden="true"></span>
-      <p class="placeholder-kicker">ADMIN</p>
-      <h1>管理后台</h1>
-      <p class="placeholder-copy">记录列表与统计图表将在后续批次接入</p>
-    </section>
+      <section class="page-intro">
+        <p class="eyebrow">OPERATIONS</p>
+        <h1>情绪概览</h1>
+        <p>观察最近的表达、情绪分布与生成趋势</p>
+      </section>
+
+      <div v-if="errorMessage" class="error-banner" role="alert">
+        <span>{{ errorMessage }}</span>
+        <button type="button" @click="loadRecords">重试</button>
+      </div>
+
+      <div v-if="loading && !records.length" class="loading-layout">
+        <div class="skeleton-stats">
+          <span v-for="index in 4" :key="index"></span>
+        </div>
+        <div class="skeleton-charts">
+          <span></span>
+          <span></span>
+        </div>
+        <div class="skeleton-table"></div>
+      </div>
+
+      <template v-else>
+        <StatCards :stats="stats" />
+
+        <div v-if="records.length" class="chart-grid">
+          <section class="panel chart-panel">
+            <header class="panel-heading">
+              <h2>八维情绪均值</h2>
+              <span>0–100</span>
+            </header>
+            <EmotionBar :emotion-avg="stats.emotionAvg" />
+          </section>
+          <section class="panel chart-panel">
+            <header class="panel-heading">
+              <h2>最近 7 天生成量</h2>
+              <span>Asia / Shanghai</span>
+            </header>
+            <DailyLine :daily="stats.daily" />
+          </section>
+        </div>
+
+        <section class="records-panel">
+          <header class="records-heading">
+            <div>
+              <h2>情绪记录</h2>
+              <span>{{ records.length }} 条记录</span>
+            </div>
+            <div class="filters">
+              <div class="filter-group" aria-label="按象限筛选">
+                <button
+                  v-for="option in quadrantOptions"
+                  :key="option.value"
+                  type="button"
+                  :class="{ active: quadrantFilter === option.value }"
+                  @click="quadrantFilter = option.value"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <select v-model="rangeFilter" aria-label="按时间范围筛选">
+                <option
+                  v-for="option in rangeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+          </header>
+
+          <RecordsTable
+            v-if="records.length"
+            :records="records"
+            :loading="loading"
+          />
+
+          <div v-else class="empty-state">
+            <span class="empty-mark" aria-hidden="true"></span>
+            <h2>{{ hasFilters ? '当前筛选条件下没有记录' : '还没有情绪记录' }}</h2>
+            <p>
+              {{
+                hasFilters
+                  ? '换一个情绪象限或时间范围再看看'
+                  : '用户生成胶囊后，这里会显示情绪分布与趋势'
+              }}
+            </p>
+            <button
+              type="button"
+              @click="hasFilters ? clearFilters() : router.push('/')"
+            >
+              {{ hasFilters ? '清除筛选' : '去生成第一条' }}
+            </button>
+          </div>
+        </section>
+      </template>
+    </div>
   </main>
 </template>
 
-<style scoped>
-.shell {
-  display: flex;
-  min-height: 100dvh;
-  flex-direction: column;
-  padding: 28px 36px 36px;
-  background:
-    linear-gradient(215deg, rgba(255, 143, 177, 0.055), transparent 38%),
-    var(--bg-base);
-}
-
-.shell-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-secondary);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-}
-
-.shell-brand {
-  color: var(--text-primary);
-}
-
-.shell-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 18px;
-}
-
-.shell-role {
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logout-button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  opacity: 0.55;
-  transition: opacity var(--dur-fast) var(--ease-soft);
-}
-
-.logout-button:hover {
-  opacity: 1;
-}
-
-.placeholder {
-  display: grid;
-  width: min(100%, 560px);
-  margin: auto;
-  justify-items: center;
-  padding: 44px;
-  text-align: center;
-}
-
-.placeholder-mark {
-  width: 9px;
-  height: 9px;
-  margin-bottom: 26px;
-  border-radius: 50%;
-  background: var(--bg-aurora-1);
-  box-shadow: 0 0 24px rgba(124, 92, 255, 0.8);
-}
-
-.placeholder-kicker {
-  margin: 0 0 12px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-}
-
-.placeholder h1 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: clamp(26px, 4vw, 38px);
-  font-weight: 300;
-  letter-spacing: 0.06em;
-  text-shadow:
-    0 0 24px rgba(124, 92, 255, 0.45),
-    0 0 60px rgba(124, 92, 255, 0.2);
-}
-
-.placeholder-copy {
-  margin: 16px 0 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-@media (max-width: 560px) {
-  .shell {
-    padding: 22px 20px 28px;
-  }
-
-  .placeholder {
-    padding: 32px 8px;
-  }
-}
-</style>
+<style scoped src="../assets/styles/admin.css"></style>

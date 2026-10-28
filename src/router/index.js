@@ -1,9 +1,6 @@
 // 路由入口：注册登录、情绪胶囊与管理后台页面，并处理登录权限。
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import AdminView from '../views/AdminView.vue'
-import CapsuleView from '../views/CapsuleView.vue'
-import LoginView from '../views/LoginView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -11,19 +8,19 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: LoginView,
+      component: () => import('../views/LoginView.vue'),
       meta: { guestOnly: true },
     },
     {
       path: '/',
       name: 'capsule',
-      component: CapsuleView,
+      component: () => import('../views/CapsuleView.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/admin',
       name: 'admin',
-      component: AdminView,
+      component: () => import('../views/AdminView.vue'),
       meta: { requiresAdmin: true },
     },
     {
